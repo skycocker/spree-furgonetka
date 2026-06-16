@@ -1,0 +1,12 @@
+en:
+  spree:
+    paczkomat_choose_heading: "Choose a Paczkomat / pickup point"
+    paczkomat_choose_button: "Pick a Paczkomat on the map"
+    paczkomat_required: "Please choose a Paczkomat (pickup point) on the map before continuing."
+    furgonetka:
+      connect: "Connect Furgonetka"
+      connected: "Connected to Furgonetka."
+      invalid_state: "Furgonetka: invalid authorization state (CSRF)."
+      create_label: "Create Furgonetka label"
+      label_created: "Furgonetka shipment created."
+      tracking: "Tracking number"

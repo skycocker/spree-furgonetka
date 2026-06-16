@@ -1,0 +1,12 @@
+pl:
+  spree:
+    paczkomat_choose_heading: "Wybierz Paczkomat / punkt odbioru"
+    paczkomat_choose_button: "Wybierz Paczkomat na mapie"
+    paczkomat_required: "Wybierz Paczkomat (punkt odbioru) na mapie przed przejściem dalej."
+    furgonetka:
+      connect: "Połącz z Furgonetką"
+      connected: "Połączono z Furgonetką."
+      invalid_state: "Furgonetka: błędny stan autoryzacji (CSRF)."
+      create_label: "Utwórz etykietę Furgonetka"
+      label_created: "Utworzono przesyłkę w Furgonetce."
+      tracking: "Numer śledzenia"

@@ -1,0 +1,92 @@
+<%# Overrides spree_storefront's delivery step to add the Furgonetka point
+    picker (Mapa) when the point-based shipping method (default code INPOST) is
+    selected. The widget covers InPost lockers via Furgonetka's account (no
+    InPost token); the chosen point is saved by CheckoutControllerDecorator.
+    Keep in sync with the gem partial on Spree upgrades. %>
+<%= form_for @order, url: spree.update_checkout_path(@order.token, @order.state), data: { controller: 'checkout-delivery' } do |form| %>
+  <div class="mb-5">
+    <%= render 'spree/checkout/order_lock_version', order: @order %>
+    <div id="shipping-method">
+      <%= render 'spree/checkout/delivery_backorder_notice', order: @order %>
+
+      <div id="methods">
+        <%= form.fields_for :shipments do |ship_form| %>
+          <div class="shipment">
+            <h5 class="checkout-content-header mb-3 font-body">
+              <%= Spree.t('storefront.checkout.delivery_method').capitalize %>
+              <% if ship_form.object.stock_location.present? %>
+                <%= Spree.t(:from).downcase %>
+                <strong><%= ship_form.object.stock_location.name %></strong>
+              <% end %>
+            </h5>
+            <ul class="rounded-md list-group mb-4 border border-default border-b-0 text-sm border-default" data-checkout-delivery-target="shippingList">
+              <% ship_form.object.shipping_rates.includes(:shipping_method, :tax_rate).each do |rate| %>
+                <%= render 'spree/checkout/delivery_shipping_rate', ship_form: ship_form, rate: rate %>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
+      </div>
+
+      <% point_rate_ids = @order.shipments.flat_map(&:shipping_rates).select { |r| r.shipping_method&.code == SpreeFurgonetka.config.courier_service_code }.map(&:id) %>
+      <% furgonetka_key = SpreeFurgonetka.config.map_api_key %>
+      <% if point_rate_ids.any? && furgonetka_key.present? %>
+        <% chosen_code = @order.public_metadata.is_a?(Hash) ? @order.public_metadata['furgonetka_point'] : nil %>
+        <% chosen_name = @order.public_metadata.is_a?(Hash) ? @order.public_metadata['furgonetka_point_name'] : nil %>
+        <div id="furgonetka-paczkomat" class="hidden mb-4 p-4 border border-default rounded-md" data-point-rate-ids="<%= point_rate_ids.to_json %>">
+          <h5 class="font-body font-semibold mb-2"><%= Spree.t(:paczkomat_choose_heading) %></h5>
+          <%= hidden_field_tag 'order[furgonetka_point]', chosen_code, id: 'furgonetka_point' %>
+          <%= hidden_field_tag 'order[furgonetka_point_name]', chosen_name, id: 'furgonetka_point_name' %>
+          <button type="button" id="furgonetka-open" class="btn btn-primary spree-btn"><%= Spree.t(:paczkomat_choose_button) %></button>
+          <p class="mt-2 text-sm font-semibold <%= 'hidden' if chosen_code.blank? %>" id="furgonetka-point-display"><%= [chosen_code, chosen_name].compact.join(' — ') %></p>
+        </div>
+
+        <script src="https://furgonetka.pl/js/dist/map/map.js" async></script>
+        <script>
+          (function() {
+            var box = document.getElementById('furgonetka-paczkomat');
+            if (!box) return;
+            var pointIds = (JSON.parse(box.dataset.pointRateIds) || []).map(String);
+            var codeInput = document.getElementById('furgonetka_point');
+            var nameInput = document.getElementById('furgonetka_point_name');
+            var display = document.getElementById('furgonetka-point-display');
+
+            function sync() {
+              var checked = document.querySelector('input[type=radio][name*="selected_shipping_rate_id"]:checked');
+              var show = checked && pointIds.indexOf(String(checked.value)) !== -1;
+              box.classList.toggle('hidden', !show);
+            }
+            document.addEventListener('change', function(e) {
+              if (e.target && e.target.name && e.target.name.indexOf('selected_shipping_rate_id') !== -1) sync();
+            });
+            document.getElementById('furgonetka-open').addEventListener('click', function() {
+              if (!(window.Furgonetka && window.Furgonetka.Map)) { return; }
+              new window.Furgonetka.Map({
+                apiKey: <%= furgonetka_key.to_json.html_safe %>,
+                courierServices: ['inpost'],
+                callback: function(params) {
+                  var p = (params && params.point) ? params.point : {};
+                  codeInput.value = p.code || '';
+                  nameInput.value = p.name || '';
+                  display.textContent = [p.code, p.name].filter(Boolean).join(' — ');
+                  display.classList.remove('hidden');
+                }
+              }).show();
+            });
+            sync();
+          })();
+        </script>
+      <% end %>
+    </div>
+  </div>
+  <div class="flex justify-end w-full gap-2 mt-5">
+    <div class="flex justify-end w-full gap-2">
+      <%= button_tag Spree.t(:save_and_continue),
+                      class: 'btn-primary w-full lg:w-2/5 font-semibold checkout-content-save-continue-button my-5 !py-4',
+                      data: { action: 'click->checkout-delivery#disableShippingRates',
+                              'checkout-delivery-target': 'submit',
+                              'turbo-submits-with': (render 'button_processing', is_hidden: false)
+                      } %>
+    </div>
+  </div>
+<% end %>

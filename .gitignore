@@ -1,0 +1,12 @@
+/.bundle/
+/spec/dummy/
+/pkg/
+/tmp/
+*.gem
+Gemfile.lock
+.DS_Store
+
+# Never commit secrets — this gem reads them from the HOST app's credentials.
+*.key
+config/credentials*
+.env*
