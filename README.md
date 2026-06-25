@@ -44,7 +44,19 @@ furgonetka:
   map_api_key: "<Furgonetka Map widget JWT, bound to your domain>"
   api_client_id: "<OAuth app Client ID>"
   api_client_secret: "<OAuth app Client Secret>"
+  sender:                                # label "from" address; required for auto-labels
+    name: "Jane Doe"
+    company: "Your Shop"
+    email: "shop@example.com"
+    phone: "600100200"
+    street: "Example St 1"
+    postcode: "00-001"
+    city: "Warsaw"
+    country_code: "PL"
 ```
+
+The Furgonetka "create package" endpoint requires the sender's `name`,
+`company`, `email`, `phone`, `street`, `postcode` and `city`.
 
 Optionally tune behaviour in an initializer (all values have sane defaults):
 
@@ -52,12 +64,10 @@ Optionally tune behaviour in an initializer (all values have sane defaults):
 # config/initializers/spree_furgonetka.rb
 SpreeFurgonetka.configure do |c|
   c.courier_service_code = "INPOST"          # shipping-method code that shows the picker
-  c.service_map = { "INPOST" => "inpost", "DPD" => "dpd", "POCZTA" => "poczta" }
-  c.sender = {                               # who the label is "from"
-    name: "Your Shop", street: "Example St 1",
-    postcode: "00-001", city: "Warsaw",
-    phone: "+48...", email: "shop@example.com"
-  }
+  # Spree shipping-method code => Furgonetka service string (resolved to the
+  # account-specific numeric service_id at send time). Map every code you use:
+  c.service_map = { "INPOST" => "inpost", "Kurier" => "inpost", "DPD" => "dpd", "POCZTA" => "poczta" }
+  # c.sender can also be set here instead of in credentials.
 end
 ```
 
@@ -100,13 +110,28 @@ Request/feature specs that exercise the Spree controllers and views require a
 Spree dummy app (`spree_dev_tools` → `bundle exec rake test_app`); the storefront
 picker and admin partial are also verified against a live store.
 
-## Verifying the label flow
+## The label payload
 
-The `/packages` payload + label path follow Furgonetka's REST docs. Because the
-account-scoped API needs the one-time OAuth consent, confirm the exact field
-mapping against your account on the first authorized label (the gem surfaces any
-API error message in the admin flash). Adjust `PackageBuilder` /
-`service_map` / `sender` if your account expects different field names.
+`PackageBuilder` produces the flat body the `/packages` endpoint expects
+(verified field-by-field against the live REST API):
+
+```jsonc
+{
+  "service_id": 12345678,        // resolved from the method code via GET /account/services
+  "sender":   { "name": "...", "company": "...", "email": "...", "phone": "...",
+                "street": "...", "postcode": "...", "city": "...", "country_code": "PL" },
+  "pickup":   { /* same shape — the label's collection / sender address */ },
+  "receiver": { "name": "...", "email": "...", "phone": "...", "street": "...",
+                "postcode": "...", "city": "...", "country_code": "PL",
+                "point": "KRA01M" },   // the Paczkomat chosen at checkout (omit for courier)
+  "parcels":  [ { "width": 23, "height": 14, "depth": 8, "weight": 0.6 } ]
+}
+```
+
+The numeric `service_id` is account-specific, so it's looked up live and cached
+(`Client#services` / `#service_id_for`) rather than hard-coded. The label PDF is
+fetched from `GET /packages/:id/label`. Any API error is surfaced in the admin
+flash.
 
 ## License
 

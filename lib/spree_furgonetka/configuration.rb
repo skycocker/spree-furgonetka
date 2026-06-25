@@ -17,13 +17,29 @@ module SpreeFurgonetka
                 :api_base_url, :authorize_url, :token_url, :courier_service_code,
                 :sender, :service_map
 
-    # Sender (nadawca) put on every label — set in the host app, e.g.:
-    #   SpreeFurgonetka.configure { |c| c.sender = { name: "Your Shop", street: "...", postcode: "00-001", city: "Warsaw", phone: "...", email: "..." } }
+    # Sender / pickup address (nadawca) stamped on every label. The Furgonetka
+    # "create package" endpoint requires name, company, email, phone, street,
+    # postcode and city. Read from the host credentials by default so the
+    # address never lives in the gem:
+    #   furgonetka:
+    #     sender:
+    #       name: "Jane Doe"
+    #       company: "Your Shop"
+    #       email: "shop@example.com"
+    #       phone: "600100200"
+    #       street: "Example St 1"
+    #       postcode: "00-001"
+    #       city: "Warsaw"
+    #       country_code: "PL"
+    # …or override in an initializer with `c.sender = { ... }`.
     def sender
-      @sender ||= {}
+      @sender ||= (credential(:sender) || {})
     end
 
-    # Maps a Spree shipping-method code to a Furgonetka service identifier.
+    # Maps a Spree shipping-method code to a Furgonetka service string. The
+    # string is resolved to the account-specific numeric service_id at send
+    # time via GET /account/services. Override in the host app when your
+    # shipping-method codes differ (e.g. an InPost courier method).
     def service_map
       @service_map ||= { "INPOST" => "inpost", "DPD" => "dpd", "POCZTA" => "poczta" }
     end

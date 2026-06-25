@@ -1,28 +1,32 @@
 module SpreeFurgonetka
-  # Maps a Spree::Order to the Furgonetka "create package" payload: receiver from
-  # the order's ship address, the pickup point the customer chose at checkout,
-  # one parcel sized from the order, and the courier service from the selected
-  # shipping method's code. Sender comes from configuration.
+  # Maps a Spree::Order to the Furgonetka "create package" payload, verified
+  # field-by-field against the live REST API (api.furgonetka.pl):
   #
-  # The field names follow Furgonetka's REST docs; confirm against the live API
-  # on the first authorized call (see README "Verifying the label flow").
+  #   {
+  #     service_id: 12345678,        # numeric, resolved from the method code
+  #     sender:   { name:, company:, email:, phone:, street:, postcode:, city:, country_code: },
+  #     pickup:   { …same shape… },  # collection / label sender address
+  #     receiver: { name:, email:, phone:, street:, postcode:, city:, country_code:, point: },
+  #     parcels:  [ { width:, height:, depth:, weight: } ]
+  #   }
+  #
+  # The body is a FLAT object — the `packages: [...]` envelope is only the read
+  # format. The chosen Paczkomat goes in `receiver.point`. `sender`/`pickup`
+  # come from configuration; the numeric service_id is looked up via the client.
   class PackageBuilder
-    def initialize(order, config: SpreeFurgonetka.config)
+    def initialize(order, config: SpreeFurgonetka.config, client: SpreeFurgonetka.client)
       @order = order
       @config = config
+      @client = client
     end
 
     def to_h
       {
-        packages: [
-          {
-            service_type: service_type,
-            sender: @config.sender,
-            receiver: receiver,
-            parcels: [parcel],
-            pickup_point: pickup_point
-          }.compact
-        ]
+        service_id: service_id,
+        sender: address_block,
+        pickup: address_block,
+        receiver: receiver,
+        parcels: [parcel]
       }
     end
 
@@ -34,10 +38,30 @@ module SpreeFurgonetka
 
     private
 
-    def service_type
+    # Numeric, account-specific service id for the order's shipping method.
+    def service_id
+      @client.service_id_for(service_name)
+    end
+
+    def service_name
       code = @order.shipments.flat_map(&:shipping_rates).detect(&:selected)&.shipping_method&.code ||
              @order.shipments.first&.shipping_method&.code
       @config.service_map[code] || code&.downcase
+    end
+
+    # Sender + pickup address, from configuration (host credentials).
+    def address_block
+      s = @config.sender || {}
+      {
+        name: s[:name],
+        company: s[:company],
+        email: s[:email],
+        phone: s[:phone],
+        street: s[:street],
+        postcode: s[:postcode],
+        city: s[:city],
+        country_code: s[:country_code] || "PL"
+      }
     end
 
     def receiver
@@ -49,8 +73,9 @@ module SpreeFurgonetka
         street: address.address1,
         postcode: address.zipcode,
         city: address.city,
-        country_code: address.country&.iso
-      }
+        country_code: address.country&.iso || "PL",
+        point: pickup_point
+      }.compact
     end
 
     # One parcel sized from the order; per-product dimensions/weight come from

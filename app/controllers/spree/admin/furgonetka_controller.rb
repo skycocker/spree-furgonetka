@@ -28,9 +28,10 @@ module Spree
         response = SpreeFurgonetka.client.create_package(SpreeFurgonetka::PackageBuilder.new(order).to_h)
 
         package = Array(response["packages"]).first || response
+        parcel = Array(package["parcels"]).first || {}
         meta = (order.public_metadata || {}).merge(
-          "furgonetka_package_id" => package["id"] || package["package_id"],
-          "furgonetka_tracking" => package["tracking_number"] || package["tracking"]
+          "furgonetka_package_id" => package["package_id"] || package["id"],
+          "furgonetka_tracking" => parcel["package_no"] || package["tracking_number"] || package["tracking"]
         ).compact
         order.update_column(:public_metadata, meta)
 

@@ -82,25 +82,41 @@ RSpec.describe SpreeFurgonetka::Client do
   describe "#create_package" do
     before { tokens.save(access_token: "AT", refresh_token: "RT", expires_in: 3600) }
 
-    it "POSTs the payload with a Bearer token and returns the parsed package" do
+    it "POSTs the FLAT payload with a Bearer token and returns the parsed package" do
       stub = stub_request(:post, "https://api.furgonetka.pl/packages")
              .with(headers: { "Authorization" => "Bearer AT", "Content-Type" => "application/json" },
-                   body: hash_including("packages"))
+                   body: hash_including("service_id" => 12345678, "receiver" => hash_including("point" => "KRA01M")))
              .to_return(status: 201, body: {
-               packages: [{ id: 987, tracking_number: "TRK123" }]
+               packages: [{ package_id: 987, parcels: [{ package_no: "TRK123" }] }]
              }.to_json, headers: { "Content-Type" => "application/json" })
 
-      result = client.create_package(packages: [{ service_type: "inpost", pickup_point: "KRA01M" }])
+      result = client.create_package(service_id: 12345678, receiver: { point: "KRA01M" }, parcels: [{ weight: 0.5 }])
 
       expect(stub).to have_been_requested
-      expect(result["packages"].first["tracking_number"]).to eq("TRK123")
+      expect(result["packages"].first["package_id"]).to eq(987)
     end
 
     it "raises Client::Error with the API message on failure" do
       stub_request(:post, "https://api.furgonetka.pl/packages")
         .to_return(status: 422, body: { message: "invalid receiver" }.to_json)
-      expect { client.create_package(packages: []) }
+      expect { client.create_package(service_id: 1) }
         .to raise_error(SpreeFurgonetka::Client::Error, /invalid receiver/)
+    end
+  end
+
+  describe "#service_id_for" do
+    before { tokens.save(access_token: "AT", refresh_token: "RT", expires_in: 3600) }
+
+    it "resolves a service string to the account-specific numeric id" do
+      stub_request(:get, "https://api.furgonetka.pl/account/services")
+        .with(headers: { "Authorization" => "Bearer AT" })
+        .to_return(status: 200, body: {
+          services: [{ id: 12345670, service: "dpd" }, { id: 12345678, service: "inpost" }]
+        }.to_json, headers: { "Content-Type" => "application/json" })
+
+      expect(client.service_id_for("inpost")).to eq(12345678)
+      expect(client.service_id_for("dpd")).to eq(12345670)
+      expect(client.service_id_for("unknown")).to be_nil
     end
   end
 

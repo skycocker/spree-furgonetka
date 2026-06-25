@@ -68,9 +68,26 @@ module SpreeFurgonetka
 
     # --- API ----------------------------------------------------------------
 
-    # NOTE: the exact /packages payload + label path are confirmed against the
-    # live API on the first authorized call (see README "Verifying"). The shape
-    # below follows Furgonetka's REST docs; specs stub the HTTP either way.
+    # The courier services available to this account, each shaped like
+    # { "id" => 12345678, "service" => "inpost", "name" => "InPost", ... }.
+    # Memoised per client instance.
+    def services
+      @services ||= Array(api_request(:get, "/account/services")["services"])
+    end
+
+    # Resolve a Furgonetka service string ("inpost", "dpd", …) to the numeric
+    # service_id the /packages endpoint requires. The ids are account-specific,
+    # so they're looked up live rather than hard-coded.
+    def service_id_for(service_name)
+      return nil if service_name.nil?
+
+      svc = services.find { |s| s["service"] == service_name }
+      svc && svc["id"]
+    end
+
+    # Create a shipment. Payload is a FLAT object (NOT wrapped in `packages`):
+    #   { service_id:, sender:, pickup:, receiver: { …, point: }, parcels: [ … ] }
+    # On success Furgonetka returns the created package; see PackageBuilder.
     def create_package(payload)
       api_request(:post, "/packages", json: payload)
     end
