@@ -70,12 +70,19 @@ module SpreeFurgonetka
         name: address.full_name,
         email: @order.email,
         phone: address.phone,
-        street: address.address1,
+        street: street_for(address),
         postcode: address.zipcode,
         city: address.city,
         country_code: address.country&.iso || "PL",
         point: pickup_point
       }.compact
+    end
+
+    # Furgonetka parses the house number out of the street string and rejects a
+    # street with no number, so fold both address lines together — the number
+    # sometimes lands in line 2.
+    def street_for(address)
+      [address.address1, address.address2].map { |s| s.to_s.strip.presence }.compact.join(" ").presence
     end
 
     # One parcel sized from the order; per-product dimensions/weight come from
