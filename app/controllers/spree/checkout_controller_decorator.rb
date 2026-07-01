@@ -6,7 +6,17 @@ module Spree
     def update
       if @order && @order.state == "delivery"
         store_furgonetka_point
-        if furgonetka_point_method_selected? && furgonetka_point_value.blank?
+        # Only enforce the point requirement on the real "continue" submit.
+        # Spree's storefront auto-submits this form with ?do_not_advance=true on
+        # EVERY shipping-rate radio click (to recalc totals; see
+        # checkout_delivery_controller.js). Blocking those bounces the customer
+        # the instant they tap the Paczkomat method — before they can open the
+        # map — and since we redirect before super, the newly picked rate is
+        # never persisted, so the radio reverts to the previously saved method
+        # (the "InPost Paczkomat silently switches to Kurier InPost" report).
+        # Let recalc submits fall through to super, which persists the rate and
+        # reveals the map picker; require the point only when advancing.
+        if params[:do_not_advance].blank? && furgonetka_point_method_selected? && furgonetka_point_value.blank?
           flash[:error] = Spree.t(:paczkomat_required)
           return redirect_to spree.checkout_state_path(@order.token, @order.state)
         end
