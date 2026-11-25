@@ -14,8 +14,9 @@ RSpec.configure do |config|
   config.disable_monkey_patching!
   config.expect_with(:rspec) { |c| c.syntax = :expect }
 
-  # Fresh global configuration for each example.
+  # Fresh global configuration (and fake store rows) for each example.
   config.before do
     SpreeFurgonetka.instance_variable_set(:@config, nil)
+    FakeStore.reset!
   end
 end

@@ -27,6 +27,18 @@ RSpec.describe SpreeFurgonetka::Configuration do
     expect(config.client_id).to be_nil
   end
 
+  it "renews tokens a week ahead of expiry by default" do
+    expect(config.refresh_ahead).to eq(7 * 24 * 3600)
+  end
+
+  it "treats mapped shipping-method codes (and the point method) as label methods" do
+    config.service_map = { "KURIER_INPOST" => "inpostkurier" }
+    expect(config.label_method?("KURIER_INPOST")).to be(true)
+    expect(config.label_method?("INPOST")).to be(true) # courier_service_code
+    expect(config.label_method?("ODBIOR")).to be(false)
+    expect(config.label_method?(nil)).to be(false)
+  end
+
   it "is configurable via SpreeFurgonetka.configure" do
     SpreeFurgonetka.configure { |c| c.courier_service_code = "PACZKOMAT" }
     expect(SpreeFurgonetka.config.courier_service_code).to eq("PACZKOMAT")

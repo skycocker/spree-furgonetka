@@ -15,7 +15,7 @@ module SpreeFurgonetka
   class Configuration
     attr_writer :client_id, :client_secret, :map_api_key,
                 :api_base_url, :authorize_url, :token_url, :courier_service_code,
-                :sender, :service_map
+                :sender, :service_map, :refresh_ahead
 
     # Sender / pickup address (nadawca) stamped on every label. The Furgonetka
     # "create package" endpoint requires name, company, email, phone, street,
@@ -48,6 +48,20 @@ module SpreeFurgonetka
     # the Furgonetka service id). Override if your method uses a different code.
     def courier_service_code
       @courier_service_code ||= "INPOST"
+    end
+
+    # Whether orders shipped with this method get the admin "create label"
+    # action: the methods mapped to a Furgonetka service, locker and courier.
+    def label_method?(code)
+      code.present? && (service_map.key?(code) || code == courier_service_code)
+    end
+
+    # How long before the access token expires the scheduled RefreshTokenJob
+    # renews it (seconds). Access tokens last 30 days and refresh tokens up to
+    # 3 months, so a week's margin rotates the refresh token every ~3 weeks and
+    # survives several missed runs.
+    def refresh_ahead
+      @refresh_ahead ||= 7 * 24 * 3600
     end
 
     def api_base_url

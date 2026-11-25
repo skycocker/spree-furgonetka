@@ -65,8 +65,11 @@ Optionally tune behaviour in an initializer (all values have sane defaults):
 SpreeFurgonetka.configure do |c|
   c.courier_service_code = "INPOST"          # shipping-method code that shows the picker
   # Spree shipping-method code => Furgonetka service string (resolved to the
-  # account-specific numeric service_id at send time). Map every code you use:
-  c.service_map = { "INPOST" => "inpost", "Kurier" => "inpost", "DPD" => "dpd", "POCZTA" => "poczta" }
+  # account-specific numeric service_id at send time). Map every code you use;
+  # the strings are the `service` values of GET /account/services. Don't map a
+  # courier method to "inpost" — that's the parcel-locker service.
+  c.service_map = { "INPOST" => "inpost", "KURIER_INPOST" => "inpostkurier", "DPD" => "dpd", "POCZTA" => "poczta" }
+  # c.refresh_ahead = 7 * 24 * 3600          # keep-alive window, seconds
   # c.sender can also be set here instead of in credentials.
 end
 ```
@@ -83,18 +86,53 @@ order's `public_metadata` and **requires** it before the order can advance.
 
 ### Auto-labels (admin)
 
-1. **Connect once:** visit `/admin/furgonetka/connect` (or click *Connect
-   Furgonetka* on an order). You're sent to Furgonetka to log in + consent, then
-   redirected back to `/admin/furgonetka/callback`, which stores a **refresh
-   token** in the default store's `private_metadata` (no password kept).
+1. **Connect once:** *Admin → Integracje* shows a **Furgonetka** card with the
+   connection's live status (*Połączono* + access-token expiry, *Wymaga
+   ponownego połączenia* with Furgonetka's reason, *Niepołączono*) and the
+   matching actions: *Połącz z Furgonetką*, *Połącz ponownie*, *Odnów teraz*,
+   *Rozłącz*. Connecting sends you to Furgonetka to log in + consent, then back
+   to `/admin/furgonetka/callback`, which stores the tokens in the default
+   store's `private_metadata` (no password kept). The order page links to the
+   same flow (with `return_to`, so you land back on the order).
    - Register the redirect URI on your OAuth app as
      `https://YOUR-DOMAIN/admin/furgonetka/callback`.
-2. **Create a label:** on an order with a chosen point, click *Create Furgonetka
-   label*. The gem builds the package (`SpreeFurgonetka::PackageBuilder`), calls
-   the API, and stores the package id + tracking number on the order.
+2. **Create a label:** every completed order shipped with a Furgonetka-mapped
+   method (`service_map` keys — parcel locker *and* courier) gets *Utwórz
+   etykietę Furgonetka* on its order page. The gem builds the package
+   (`SpreeFurgonetka::PackageBuilder`), calls the API, and stores the package id
+   (+ tracking number, when Furgonetka returns one) on the order. API errors are
+   shown in Polish with Furgonetka's own message (field errors included).
 
-Tokens auto-refresh; the access token is never persisted longer than its 60-min
-life.
+### The OAuth session
+
+Furgonetka's documented lifetimes: the access token lasts **30 days**, the
+refresh token **up to 3 months** and is **single-use** — every refresh returns
+a new pair and revokes the old one. So:
+
+- `SpreeFurgonetka::TokenStore` reads the tokens from the database every time
+  (never through `Spree::Store.default`, which is a `Rails.cache` copy), writes
+  only its own `furgonetka_*` keys under a row lock and then expires Spree's
+  cached default store.
+- Refreshes run under that row lock and re-check after acquiring it, so two
+  processes never spend the same refresh token. A `401` from the API triggers
+  one refresh + retry.
+- A refresh Furgonetka refuses (`invalid_grant`) drops the dead session and
+  records the reason; the admin then shows *Połącz ponownie* instead of the
+  label button.
+- Token writes refuse to run inside a caller's database transaction
+  (`TokenStore::TransactionError`): a rollback would restore a refresh token
+  Furgonetka has already revoked.
+- **Keep-alive:** schedule `SpreeFurgonetka::RefreshTokenJob`; it renews the
+  session `refresh_ahead` (default 7 days) before the access token expires, so
+  the refresh token is rotated long before its own lifetime runs out even when
+  no labels are created. With Solid Queue (`config/recurring.yml`):
+
+  ```yaml
+  production:
+    refresh_furgonetka_token:
+      class: SpreeFurgonetka::RefreshTokenJob
+      schedule: every 6 hours at minute 41
+  ```
 
 ## Testing
 
@@ -123,15 +161,16 @@ picker and admin partial are also verified against a live store.
   "pickup":   { /* same shape — the label's collection / sender address */ },
   "receiver": { "name": "...", "email": "...", "phone": "...", "street": "...",
                 "postcode": "...", "city": "...", "country_code": "PL",
-                "point": "KRA01M" },   // the Paczkomat chosen at checkout (omit for courier)
+                "point": "KRA01M" },   // the Paczkomat chosen at checkout (point method only)
   "parcels":  [ { "width": 23, "height": 14, "depth": 8, "weight": 0.6 } ]
 }
 ```
 
 The numeric `service_id` is account-specific, so it's looked up live and cached
 (`Client#services` / `#service_id_for`) rather than hard-coded. The label PDF is
-fetched from `GET /packages/:id/label`. Any API error is surfaced in the admin
-flash.
+fetched from `GET /packages/:id/label`. A method code that resolves to no
+service on the account raises `PackageBuilder::UnknownService` before anything
+is sent.
 
 ## License
 

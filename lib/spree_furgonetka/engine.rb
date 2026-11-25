@@ -16,12 +16,20 @@ module SpreeFurgonetka
     end
     config.to_prepare(&method(:activate).to_proc)
 
-    # Register the admin order-page partial (shows the chosen Paczkomat +
-    # the "create label" action). Deduped so dev reloads don't stack it.
+    # Register the admin partials: the order-page card (chosen Paczkomat + the
+    # "create label" action) and the connection card on Admin → Integracje,
+    # where the shop looks for it. Deduped so dev reloads don't stack them.
+    ADMIN_PARTIALS = {
+      order_page_sidebar_partials: "spree/admin/orders/furgonetka",
+      integrations_header_partials: "spree/admin/furgonetka/connection"
+    }.freeze
+
     config.after_initialize do
       if Rails.application.config.respond_to?(:spree_admin)
-        partials = Rails.application.config.spree_admin.order_page_sidebar_partials
-        partials << "spree/admin/orders/furgonetka_point" unless partials.include?("spree/admin/orders/furgonetka_point")
+        ADMIN_PARTIALS.each do |slot, partial|
+          partials = Rails.application.config.spree_admin.public_send(slot)
+          partials << partial unless partials.include?(partial)
+        end
       end
     end
   end

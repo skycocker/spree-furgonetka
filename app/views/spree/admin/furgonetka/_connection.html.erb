@@ -1,0 +1,84 @@
+<%# Furgonetka on Admin → Integracje (integrations_header_partials). Not a
+    Spree::Integration on purpose: the connection is an OAuth consent, not a
+    form of API keys, and its state lives with the tokens — so it gets its own
+    card with the live status and connect / reconnect / disconnect buttons. %>
+<% furgonetka_configured = SpreeFurgonetka.config.api_configured? %>
+<% furgonetka_session = SpreeFurgonetka.client.session if furgonetka_configured %>
+<% furgonetka_status =
+     if !furgonetka_configured then :not_configured
+     elsif furgonetka_session.connected? then :connected
+     elsif furgonetka_session.reconnect_required? then :reconnect_required
+     else :disconnected
+     end %>
+<% furgonetka_time = ->(time) { l(time.in_time_zone, format: '%d.%m.%Y %H:%M') } %>
+
+<div class="grid grid-cols-12 gap-6" id="furgonetka-connection" data-test-id="furgonetka-connection" data-status="<%= furgonetka_status %>">
+  <div class="col-span-12 lg:col-span-8 lg:col-start-3">
+    <div class="my-2 text-gray-600 font-light uppercase"><%= Spree.t('furgonetka.integration.group') %></div>
+
+    <div class="card mb-6">
+      <div class="card-header border-b flex items-center justify-between gap-4 <%= 'bg-green-50' if furgonetka_status == :connected %>">
+        <h5 class="card-title mb-0"><%= icon('truck-delivery', class: 'mr-2') %>Furgonetka</h5>
+        <% badge_class = { connected: 'badge-success', reconnect_required: 'badge-danger', not_configured: 'badge-warning' }.fetch(furgonetka_status, 'badge-light') %>
+        <span class="badge <%= badge_class %> small"><%= Spree.t("furgonetka.integration.status.#{furgonetka_status}") %></span>
+      </div>
+
+      <div class="card-body">
+        <p><%= Spree.t('furgonetka.integration.description') %></p>
+
+        <% case furgonetka_status %>
+        <% when :connected %>
+          <dl class="text-sm m-0">
+            <% [[:authorized_at, furgonetka_session.authorized_at], [:refreshed_at, furgonetka_session.refreshed_at]].each do |key, time| %>
+              <% next unless time %>
+              <div class="flex justify-between gap-3 py-1 border-b border-gray-100">
+                <dt class="text-gray-600"><%= Spree.t("furgonetka.integration.#{key}") %></dt>
+                <dd class="m-0 text-right"><%= furgonetka_time.call(time) %></dd>
+              </div>
+            <% end %>
+            <div class="flex justify-between gap-3 py-1">
+              <dt class="text-gray-600"><%= Spree.t('furgonetka.integration.expires_at') %></dt>
+              <dd class="m-0 text-right">
+                <% if furgonetka_session.expires_at.nil? %>
+                  —
+                <% elsif furgonetka_session.access_token_valid? %>
+                  <%= furgonetka_time.call(furgonetka_session.expires_at) %>
+                <% else %>
+                  <%= Spree.t('furgonetka.integration.expired', time: furgonetka_time.call(furgonetka_session.expires_at)) %>
+                <% end %>
+              </dd>
+            </div>
+          </dl>
+          <p class="text-sm text-gray-600 mt-3 mb-0"><%= Spree.t('furgonetka.integration.auto_refresh') %></p>
+        <% when :reconnect_required %>
+          <div class="alert alert-danger mb-0">
+            <%= Spree.t('furgonetka.integration.reconnect_required') %>
+            <div class="text-sm mt-2"><%= Spree.t('furgonetka.integration.reason', reason: furgonetka_session.reconnect_reason) %></div>
+          </div>
+        <% when :disconnected %>
+          <p class="text-gray-600 mb-0"><%= Spree.t('furgonetka.integration.disconnected') %></p>
+        <% else %>
+          <p class="text-gray-600 mb-0"><%= Spree.t('furgonetka.integration.not_configured') %></p>
+        <% end %>
+      </div>
+
+      <% if furgonetka_configured %>
+        <div class="card-footer flex flex-wrap items-center gap-2">
+          <% case furgonetka_status %>
+          <% when :connected %>
+            <%= button_to Spree.t('furgonetka.refresh'), spree.admin_furgonetka_refresh_path,
+                          method: :post, class: 'btn btn-sm btn-light' %>
+            <%= link_to Spree.t('furgonetka.reconnect'), spree.admin_furgonetka_connect_path, class: 'btn btn-sm btn-light' %>
+            <%= button_to Spree.t('furgonetka.disconnect'), spree.admin_furgonetka_disconnect_path,
+                          method: :delete, class: 'btn btn-sm btn-light text-danger',
+                          form: { data: { turbo_confirm: Spree.t('furgonetka.disconnect_confirm') } } %>
+          <% when :reconnect_required %>
+            <%= link_to Spree.t('furgonetka.reconnect'), spree.admin_furgonetka_connect_path, class: 'btn btn-primary' %>
+          <% else %>
+            <%= link_to Spree.t('furgonetka.connect'), spree.admin_furgonetka_connect_path, class: 'btn btn-primary' %>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

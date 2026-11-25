@@ -1,0 +1,56 @@
+<%# Order-page sidebar card: the Paczkomat picked at checkout (locker orders)
+    and the Furgonetka shipment action for every order shipped with a
+    Furgonetka-mapped method — locker and courier alike. When the connection
+    is gone the card says so in Polish and links straight to (re)connecting,
+    returning here afterwards. %>
+<% builder = SpreeFurgonetka::PackageBuilder.new(order) %>
+<% meta = order.public_metadata.to_h %>
+<% point = builder.pickup_point %>
+<% shipment_created = meta['furgonetka_package_id'].present? || meta['furgonetka_tracking'].present? %>
+<% label_action = builder.label_supported? && order.completed? && !order.canceled? %>
+<% if point.present? || shipment_created || label_action %>
+  <div class="card mb-6" data-test-id="order-furgonetka">
+    <div class="card-header">
+      <h5 class="card-title"><%= icon('truck-delivery', class: 'mr-2') %>Furgonetka</h5>
+    </div>
+    <div class="card-body">
+      <% if point.present? %>
+        <div class="text-sm text-gray-600 mb-1"><%= Spree.t('furgonetka.pickup_point') %></div>
+        <span class="badge badge-info" style="font-size: 1rem;"><%= point %></span>
+        <% if meta['furgonetka_point_name'].present? %>
+          <div class="mt-2 text-gray-600"><%= meta['furgonetka_point_name'] %></div>
+        <% end %>
+      <% end %>
+
+      <div class="<%= 'mt-4' if point.present? %>">
+        <% if shipment_created %>
+          <% if meta['furgonetka_package_id'].present? %>
+            <div class="text-sm"><%= Spree.t('furgonetka.package_id') %>: <strong><%= meta['furgonetka_package_id'] %></strong></div>
+          <% end %>
+          <% if meta['furgonetka_tracking'].present? %>
+            <div class="text-sm"><%= Spree.t('furgonetka.tracking') %>: <strong><%= meta['furgonetka_tracking'] %></strong></div>
+          <% else %>
+            <p class="text-sm text-gray-600 mt-1 mb-0"><%= Spree.t('furgonetka.package_waiting_hint') %></p>
+          <% end %>
+        <% elsif label_action && !SpreeFurgonetka.config.api_configured? %>
+          <p class="text-sm text-gray-600 mb-0"><%= Spree.t('furgonetka.integration.not_configured') %></p>
+        <% elsif label_action %>
+          <% furgonetka_session = SpreeFurgonetka.client.session %>
+          <% connect_path = spree.admin_furgonetka_connect_path(return_to: request.path) %>
+          <% if furgonetka_session.connected? %>
+            <p class="text-sm text-gray-600 mb-2"><%= Spree.t('furgonetka.service', service: builder.service_name) %></p>
+            <%= button_to Spree.t('furgonetka.create_label'),
+                          spree.admin_furgonetka_create_label_path(order_id: order.number),
+                          method: :post, class: 'btn btn-sm btn-primary' %>
+          <% elsif furgonetka_session.reconnect_required? %>
+            <div class="alert alert-warning text-sm mb-3"><%= Spree.t('furgonetka.errors.reconnect_required') %></div>
+            <%= link_to Spree.t('furgonetka.reconnect'), connect_path, class: 'btn btn-sm btn-primary' %>
+          <% else %>
+            <p class="text-sm text-gray-600 mb-2"><%= Spree.t('furgonetka.integration.disconnected') %></p>
+            <%= link_to Spree.t('furgonetka.connect'), connect_path, class: 'btn btn-sm btn-light' %>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>

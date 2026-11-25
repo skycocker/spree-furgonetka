@@ -58,4 +58,33 @@ RSpec.describe SpreeFurgonetka::PackageBuilder do
     expect(payload[:service_id]).to eq(12345670)
     expect(payload[:receiver]).not_to have_key(:point)
   end
+
+  # A customer who picked a locker and then switched to the courier leaves the
+  # point behind in the order's metadata.
+  it "ignores a leftover Paczkomat on a courier order" do
+    builder = build(build_fake_order(point: "KRA01M", code: "DPD"))
+    expect(builder.pickup_point).to be_nil
+    expect(builder.to_h[:receiver]).not_to have_key(:point)
+  end
+
+  it "raises UnknownService instead of sending a package without a service" do
+    allow(client).to receive(:service_id_for).with("gls").and_return(nil)
+
+    expect { build(build_fake_order(point: nil, code: "GLS")).to_h }
+      .to raise_error(described_class::UnknownService) { |e|
+        expect(e).to be_a(SpreeFurgonetka::Client::Error)
+        expect(e).to have_attributes(shipping_method_code: "GLS", service_name: "gls")
+      }
+  end
+
+  it "names the Furgonetka service a label will use" do
+    expect(build(build_fake_order(code: "INPOST")).service_name).to eq("inpost")
+    expect(build(build_fake_order(point: nil, code: "DPD")).service_name).to eq("dpd")
+  end
+
+  it "offers labels for every mapped method, locker and courier alike" do
+    expect(build(build_fake_order(code: "INPOST"))).to be_label_supported
+    expect(build(build_fake_order(point: nil, code: "DPD"))).to be_label_supported
+    expect(build(build_fake_order(point: nil, code: "ODBIOR_OSOBISTY"))).not_to be_label_supported
+  end
 end
