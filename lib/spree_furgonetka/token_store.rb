@@ -73,9 +73,9 @@ module SpreeFurgonetka
     def synchronize
       record = fresh_record
       ensure_own_transaction!(record)
-      record.with_lock do
+      with_row_lock(record) do |locked|
         @synchronizing = true
-        yield build_session(record.private_metadata)
+        yield build_session(locked.private_metadata)
       ensure
         @synchronizing = false
       end
@@ -144,16 +144,32 @@ module SpreeFurgonetka
     def write(pairs)
       record = fresh_record
       ensure_own_transaction!(record) unless @synchronizing
-      written = record.with_lock do
-        meta = (record.private_metadata || {}).to_h.stringify_keys
+      written = with_row_lock(record) do |locked|
+        meta = (locked.private_metadata || {}).to_h.stringify_keys
         next false if block_given? && !yield(meta)
 
         merged = meta.merge(pairs).reject { |key, value| KEYS.include?(key) && value.nil? }
-        record.update_column(:private_metadata, merged)
+        locked.update_column(:private_metadata, merged)
         true
       end
       expire_cached_store(record) if written
       written
+    end
+
+    # Locks the store's row (SELECT … FOR UPDATE) for the block and yields the
+    # row as read under that lock.
+    #
+    # Not ActiveRecord's #with_lock: that refuses to lock a record with unsaved
+    # changes, and a Spree::Store can count as changed the moment it is loaded —
+    # its serialized `preferences` re-serialize differently from what an older
+    # version stored. On the production store every token write raised
+    # "Locking a record with unpersisted changes is not supported" (2026-11-25).
+    # Locking through the relation never looks at the instance's dirty state.
+    def with_row_lock(record)
+      model = record.class
+      return record.with_lock { yield record } unless model.respond_to?(:lock) && model.respond_to?(:transaction)
+
+      model.transaction { yield model.lock.find(record.id) }
     end
 
     # Test fixtures wrap examples in a non-joinable transaction, which commits
